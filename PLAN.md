@@ -1,6 +1,8 @@
 # Herdr Spaces creation and ordering plan
 
-Updated: 2026-10-15. Design proposal; the repository still contains a CLI scaffold.
+Updated: 2026-10-15. The two Space workflows and their tests are implemented.
+This document retains the behavior contract; see [verification and local rollout](docs/verification.md)
+for execution evidence and the separately prepared chezmoi integration.
 
 Here, a **Space** means an entry in Herdr's **Spaces sidebar**. Herdr's public
 socket interface and CLI call a Space a `workspace`; the code and command names

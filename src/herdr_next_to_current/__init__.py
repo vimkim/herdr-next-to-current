@@ -1,1 +1,1 @@
-"""Adjacent tab and workspace creation for Herdr."""
+"""Create and reorder Herdr Spaces relative to the invoking Space."""

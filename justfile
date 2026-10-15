@@ -15,4 +15,7 @@ fmt:
 build:
     uv build
 
-check: lint build
+test:
+    uv run python -m unittest discover -v
+
+check: lint test build
