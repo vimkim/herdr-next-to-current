@@ -1,182 +1,307 @@
-# herdr-next-to-current project plan
+# Herdr Spaces creation and ordering plan
 
-Updated: 2026-10-07. Initial stage: establish the uv package, command interface, repository, and implementation plan. Terminal mutation and chezmoi integration are separate implementation milestones.
+Updated: 2026-10-15. Design proposal; the repository still contains a CLI scaffold.
 
-## Accepted direction
+Here, a **Space** means an entry in Herdr's **Spaces sidebar**. Herdr's public
+socket interface and CLI call a Space a `workspace`; the code and command names
+below use that spelling. Agents run inside panes and have a separate listing.
 
-| Item | Direction |
+Use the existing **Python uv project, `herdr-next-to-current`**, for two workflows:
+create a Space immediately below the invoking Space, and open a numbered TUI
+that moves the invoking Space immediately before the chosen Space.
+Herdr already provides the required socket operations. Python's standard library
+is sufficient, including `curses` for this small TUI; no Rust build or native
+plugin is needed for the first release.
+
+## Scope and prior decisions
+
+Keep the established distribution, console command, Python package
+`herdr_next_to_current`, canonical checkout `~/gh/herdr-next-to-current`, Python
+3.11 minimum, Linux/WSL support, and editable uv installation from merged `main`.
+The numbered TUI expands the earlier adjacent-creation-only scope. Existing tab
+creation remains a later milestone; keep its scaffold's explicit error until it
+is implemented. Preserve the existing workspace up/down helper and tab bindings.
+
+Retain strict source resolution, no silent selection of server-wide focus, and
+default focus after successful creation with `--no-focus` available. Public focus
+is session-wide. Source identity stays fixed throughout a command.
+
+The initial group policy retains the earlier restriction: adjacent creation
+rejects sources belonging to a displayed Git worktree group, including its root.
+The proposed reorder policy likewise rejects a grouped source or destination.
+Show grouped rows with an explanation rather than hiding or renumbering them.
+Moving whole groups requires a separate explicit contract; the raw movement
+operation does not enforce group boundaries. Group support is a deferred
+extension. The inspected working session has no grouped Spaces, so this limit
+does not affect its current Spaces.
+
+Current API and source evidence is collected in
+[workspace-order-evidence.md](docs/workspace-order-evidence.md). Both the installed
+CLI and running server reported **0.9.3, protocol 22** during this investigation.
+No live workspace was created, moved, focused, or closed.
+
+## User experience
+
+| Invocation | Planned behavior |
 | --- | --- |
-| Project and distribution | `herdr-next-to-current` |
-| Console command | `herdr-next-to-current` |
-| Python package | `herdr_next_to_current` |
-| Canonical checkout | `~/gh/herdr-next-to-current` |
-| GitHub repository | `https://github.com/vimkim/herdr-next-to-current` |
-| Packaging | Standalone Python uv project, installed as an editable uv tool |
-| User interface | `herdr-next-to-current workspace ...` and `herdr-next-to-current tab ...` |
-| Bootstrap | Automatically install with the chezmoi apply phase on a fresh machine, matching my-git-utils |
-| Maintenance | Participate in `daily-update` as a personal tool checkout |
-| Initial runtime | Linux, including WSL and the remote Rocky Linux server |
+| `herdr-next-to-current workspace` | Create below the invoking workspace, then focus the new workspace |
+| `herdr-next-to-current workspace --label review --cwd ~/project` | Same placement, with explicit label and directory |
+| `herdr-next-to-current workspace --no-focus` | Same placement, without requesting a focus change |
+| `herdr-next-to-current reorder` | Open the numbered move TUI |
+| `herdr-next-to-current reorder --before 2` | Move before row 2 from a fresh list, without a TUI |
+| `herdr-next-to-current reorder --before-id WORKSPACE_ID` | Move before a stable ID, suitable for automation |
+| `herdr-next-to-current reorder --to-end` | Move to the end |
 
-This is a helper launched by Herdr custom command bindings or from a Herdr pane. A native Herdr plugin manifest is optional future integration; the requested Python binary does not require plugin registration.
+Use mutually exclusive destination options. Add `--json` for noninteractive
+commands. Global `--socket PATH` and `--source-workspace ID` support explicit
+automation; an explicit socket requires an explicit source workspace.
 
-## Current evidence
-
-Herdr's current tab and workspace creation schemas have no ordering parameter. New tabs append in [the released tab implementation](https://github.com/herdrdev/herdr/blob/v0.9.3/src/workspace.rs#L571), and ordinary workspaces append in [the released workspace implementation](https://github.com/herdrdev/herdr/blob/v0.9.3/src/app/creation.rs#L148). Its [socket API](https://herdr.dev/docs/socket-api/#raw-methods) provides `tab.move`, `workspace.move`, and `workspace.move_block`.
-
-The installed Herdr 0.9.1 already supplies the create/move request schemas. This means the helper can use the installed server without an upgrade. Validate the server's schema and responses at implementation time; this is evidence of available operations, not proof that the new helper works.
-
-The user's existing `herdr-move-workspace` helper reads the invoking command's socket and workspace ID, reads a snapshot, and moves the workspace by insertion index. Reuse that experience in one shared client rather than distributing another personal script through dotfiles.
-
-## Proposed CLI contract
+Example TUI:
 
 ```text
-herdr-next-to-current --help
-herdr-next-to-current --version
-herdr-next-to-current workspace [--label TEXT] [--cwd PATH] [--no-focus]
-herdr-next-to-current tab [--label TEXT] [--cwd PATH] [--no-focus]
+Move Space: api
+
+   1  dotfiles
+   2  CUBRID
+ > 3  api             current
+   4  logs
+   5  [end of list]
+
+Insert current Space before number: _
+Enter: move   Esc/q: cancel   r: refresh   PgUp/PgDn: scroll
 ```
 
-The two resource commands create immediately after the source item by default. They do not require a separate `create` verb. Creation focuses the new item by default; `--no-focus` retains the previous view. Explicit source or socket selectors, output format, and optional move commands remain design decisions for the interview.
+Typing `2` and Enter produces `dotfiles, api, CUBRID, logs`. The same `api`
+workspace, panes, processes, and focus remain; only its order changes. Close the
+popup after success. A failed move stays visible with an actionable message.
 
-The scaffold recognizes this interface but returns an explicit nonzero error for creation. It must never silently succeed while performing no operation.
+Indices are **one-based displayed row numbers**, independent of workspace IDs.
+Include the current row so other rows retain their numbers. Selecting the current
+row or an already adjacent destination succeeds without a mutation. The extra
+`N+1` row is an insertion choice, not a real workspace index, and allows moving
+to the end. Accept multiple digits, Backspace, resize, and lists longer than the
+popup. Reject empty input, zero, negative values, and out-of-range numbers.
 
-## Desired behavior
+Freeze the displayed number-to-ID mapping until refresh or submission. On Enter,
+fetch fresh state; if order, membership, or grouping changed, refresh the rows,
+clear the input, and require a new selection. Labels can update without changing
+identity. Never silently reinterpret a typed number against a different list.
+Do not hold a mutation lock while waiting for keyboard input.
 
-```text
-Before:  A, B(current), C, D
-Create:  A, B, C, D, NEW
-Move:    A, B, NEW, C, D
-Focus:         NEW(current)
+## Source and session selection
+
+Capture the socket and source before opening the TUI or waiting for a lock:
+
+1. Explicit selectors win; validate the source on the explicitly selected socket.
+2. Herdr custom commands provide `HERDR_ACTIVE_WORKSPACE_ID` and the invoking
+   socket. Prefer that captured workspace context over inherited pane variables.
+3. A command typed in a pane uses `HERDR_PANE_ID` with
+   `pane.current(caller_pane_id=...)`, resolving the canonical workspace even if a
+   pane has moved. Validate available workspace-only context when no pane ID is
+   available; do not replace a failed pane resolution with global focus.
+4. Missing, inconsistent, or stale context fails before mutation. Outside Herdr,
+   require both explicit socket and source. Do not guess the default socket,
+   parse ID prefixes, or use whichever workspace another client is viewing.
+
+The investigating shell actually has stale caller IDs while another workspace is
+focused. This is a required failure case, not a reason to infer a new source.
+Scope one invocation to one server socket. Combined views of multiple saved
+machines and remote socket bridging are outside the first release.
+
+## Ordering operations
+
+Use [`workspace.move_block`](https://herdr.dev/docs/socket-api/#raw-methods) with
+a single workspace ID and an optional `before_workspace_id`. The server resolves
+the IDs and applies that one move atomically. This avoids `workspace.move`'s
+pre-removal insertion-slot arithmetic. An absent anchor means the end.
+
+For example, moving `api` before `CUBRID` sends:
+
+```json
+{"id":"move-1","method":"workspace.move_block","params":{"workspace_ids":["api-id"],"before_workspace_id":"cubrid-id"}}
 ```
 
-The same ordering applies to tabs in a workspace and ordinary workspaces on one server. Creating after the last item leaves the new item at the end. IDs determine the anchor; labels and display numbers do not.
+The UI numbers never cross this mutation interface. Names are labels only; use
+the IDs received from Herdr, rather than constructing IDs from labels.
 
-1. Capture the triggering context and socket before creation. For custom commands, use the provided `HERDR_ACTIVE_WORKSPACE_ID` / `HERDR_ACTIVE_TAB_ID`. For direct invocation, resolve the calling pane's identity and source. Do not replace known source IDs with another client's global focus.
-2. Confirm the source exists and read its ordered peers. Keep tabs scoped to the correct workspace and all calls scoped to the same server.
-3. Create with `focus: false`, carrying an explicit cwd and label when supplied. Preserve Herdr's directory policy when cwd is omitted; confirm it follows the intended source with multiple clients.
-4. Keep the successful create response's new ID. A lost create response must not trigger a blind retry, since the item might already exist.
-5. Read the order again, find the original source by ID, and move the new item with `insert_index = source_index + 1`. Skip a redundant move when it is already adjacent.
-6. Verify adjacency. Correct an intervening reorder at most once; report continued contention rather than looping indefinitely.
-7. Focus the new ID unless `--no-focus` was requested, and verify which attached clients the focus API affects.
+For **reorder**, validate the frozen source, selected target, group policy, and
+latest order; recognize no-ops; send one ID-anchored move. Check its authoritative
+returned list for the requested placement and preservation of the other rows'
+relative order. Request no focus change. A final read can detect subsequent
+contention; it cannot prevent another client from moving things again. Do not
+automatically fight that client by repeatedly moving the source back.
 
-Use bounded socket I/O, newline-delimited JSON, matching request IDs, and structured error handling. A per-socket helper lock can serialize this tool's own invocations. It cannot lock unrelated clients. Creation and movement remain separate operations; atomic placement would need native Herdr support.
+For **creation below the source**:
 
-Preserve a created item if a later move or focus fails. Report its ID and completed stage so the user can recover without losing a running shell.
+1. Validate the source and group policy, then create with `focus:false` and
+   `source_workspace_id` set to the captured source. Pass a label when supplied.
+2. An explicit `--cwd` becomes an absolute path. Otherwise omit `cwd` so Herdr
+   applies its configured directory policy to the specified source workspace.
+   This does not pin a particular invoking pane if clients select different
+   tabs/panes within that workspace; use `--cwd` when that exact directory matters.
+3. Keep the created workspace ID from the response. Read fresh ordered state
+   and revalidate the source and its group status. If it disappeared or became
+   grouped, preserve the new workspace and report incomplete placement. Otherwise
+   identify the source's successor with the new workspace excluded. Move the new
+   ID before that successor, or to the end when absent. Skip movement when the
+   workspace is already adjacent.
+4. Verify adjacency, then focus the new ID unless `--no-focus` was requested.
+   Do not close the new workspace if placement or focus fails.
 
-## Package and module design
+Creation and placement are separate server operations, so an appended workspace
+may briefly appear. Atomic create-at-position would need a Herdr change. A
+per-socket advisory lock serializes this helper's short mutation workflows, with
+a bounded wait; unrelated clients can still change the session. Capture source
+identity before the lock. Two queued creates captured from B produce
+`B, NEW2, NEW1`; a later trigger captured from NEW1 naturally creates a chain.
 
-Follow the my-git-utils convention: one distribution, a `src/` package, a tracked `uv.lock`, and a small `justfile`.
+With Git worktree groups present, Herdr's flat storage order can differ from
+sidebar order. Build picker rows from the version-checked sidebar projection,
+keeping roots and children together; never assume raw list indices are visible
+sidebar indices. Use the picker's own fully expanded numbering, regardless of
+the client's collapsed sidebar state. Reject moves involving grouped rows under
+the initial policy.
+Test standalone placement alongside groups as well as sessions without groups.
+
+## Module design
+
+Keep the external interface at the CLI. Four small implementation files suffice:
 
 ```text
-pyproject.toml
-uv.lock
-justfile
-README.md
-PLAN.md
 src/herdr_next_to_current/
-  __init__.py
-  cli.py          # user arguments, context, output, exit status
-  client.py       # Herdr socket transport and request/response validation
-  placement.py    # source lookup, creation, movement, verification, focus
-tests/
-  test_workflow.py # fake socket server; full user-visible workflows
-docs/
-  agents/         # issue tracker and domain setup after the setup skill
-  adr/            # settled decisions after the design interview
-GLOSSARY.md       # vocabulary established during the interview
+  cli.py          # arguments, captured context, result formatting and exit codes
+  client.py       # Unix socket request/response transport
+  placement.py    # validated source, order planning, create/move/verify workflows
+  tui.py          # curses rendering, numeric input and cancellation
 ```
 
-Only packaging and the command skeleton belong to the initial scaffold. Add pytest and behavior tests with the first functional slice. Use `just lint` and `just build` now; add `just test` when executable behavior is introduced.
+`placement.py` is the deep module: the CLI and TUI ask it to create after a source
+or move a source before an anchor, without knowing index adjustment, group
+validation, partial-failure recovery, or focus sequencing. Keep order calculation
+pure and socket transport supplied by the caller. Test workflows through this
+interface and through the CLI with a fake Unix socket server. Avoid a general
+plugin framework, daemon, database, event subscription cache, or interchangeable
+backend layer for this two-command tool.
 
-`just sync` installs the primary `main` checkout with `uv tool install --editable . --reinstall`. Do not install from a task worktree: removing it would break the editable command. Document development-time execution through `uv run` instead.
+The client opens one connection per ordinary request, uses newline-delimited
+JSON, verifies request IDs and result types, and applies bounded I/O and response
+sizes. Do not implicitly retry mutations. Validate the running server's metadata
+and required operations; matching the locally installed CLI version alone is
+insufficient. Target verified 0.9.3 behavior initially and report unsupported
+servers explicitly rather than silently switching to numeric moves.
 
-## Chezmoi bootstrap and daily-update integration
+## Results and failures
 
-The existing reference in `vimkim/dotfiles` is `.chezmoiscripts/run_once_after_install-my-git-utils.sh`. It clones the missing repository into `~/gh/my-git-utils`, checks `uv` and `just`, and runs `just sync`. The managed `daily-update` script later refreshes the checkout and reinstalls the tools.
+| Outcome | Exit | Behavior |
+| --- | --- | --- |
+| Complete, no-op, or interactive cancel | 0 | Normal success; cancel changes nothing |
+| Usage, context, unsupported group, or pre-mutation failure | 2 | Explain the correction; leave state untouched |
+| New workspace exists, but placement/focus is incomplete | 3 | Preserve it and report its ID and completed stage |
+| Mutation sent but its outcome cannot be established | 4 | Report uncertainty; do not blindly repeat creation |
 
-Mirror that model when the helper is ready:
+Human output is the default; JSON includes status, source ID, new ID when known,
+completed stage, and an error when present. Do not claim a created ID after losing
+the create response. A set difference is ambiguous when another client creates
+concurrently. A move timeout may be reconciled by a read; do not retry it blindly.
 
-1. Add `.chezmoiscripts/run_once_after_install-herdr-next-to-current.sh` to the **chezmoi source repository**, in its own topic worktree.
-2. Clone `https://github.com/vimkim/herdr-next-to-current.git` into `~/gh/herdr-next-to-current` only when no checkout exists. Never replace an occupied unrelated directory or discard local work.
-3. Require `git`, `uv`, and `just`; run `just --justfile "$dir/justfile" --working-directory "$dir" sync`. Use the same nonfatal bootstrap and explicit retry guidance as my-git-utils.
-4. Add `herdr-next-to-current` to `PERSONAL_TOOLS` in the chezmoi source `private_dot_config/my-scripts/bin/executable_daily-update`. Its exact deployed target is `~/.config/my-scripts/bin/daily-update`.
-5. Preserve existing daily-update rules: skip dirty/ahead/diverged/missing/untracked checkouts, fast-forward only, and refresh an independent tool even when another step fails.
-6. Update the dotfiles bootstrap documentation and focused daily-update tests. Test the run-once bootstrap in a temporary home with stubbed external commands.
-7. Inspect the rendered changes and obtain the user's normal local merge review. Publishing `vimkim/dotfiles` and deploying any existing-machine target each require their own explicit request.
+Detached shell shortcuts discard output. Plan quiet success, a bounded durable
+failure log under `$XDG_STATE_HOME/herdr-next-to-current/` (default
+`~/.local/state/herdr-next-to-current/`), and best-effort Herdr notification with
+the log location. Notification failure must not erase the original diagnostic.
+These output and notification choices resolve previously open questions as
+proposals; they are not recorded as previously accepted user decisions.
 
-The automatic-install trigger is **`chezmoi init --apply`**, because scripts run during apply. Plain `chezmoi init` obtains source state and does not install this binary. Chezmoi's [script lifecycle](https://www.chezmoi.io/user-guide/use-scripts-to-perform-actions/) documents the run-once and after-apply naming rules.
+## Herdr integration
 
-Run-once scripts also run on a later apply when newly introduced, not exclusively on init. Keep the script idempotent for an existing machine. Do not invoke a broad chezmoi apply while developing this integration.
+Use existing custom command bindings. Proposed creation is Alt+C and the move
+popup is Alt+Shift+C; keep Alt+W's existing workspace picker. Disable the native
+creation binding to avoid it taking precedence:
 
-## Herdr shortcuts and Windows Terminal
+```toml
+[keys]
+new_workspace = []
 
-Retain the agreed navigation layout: Alt+Left/Right for tabs and Alt+Up/Down for workspaces; add Shift to reorder. Ctrl+A followed by Up/Down is a proposed fallback. The latest chezmoi source checked during scaffolding has workspace movement aliases but does not contain those prefix fallbacks or native tab movement bindings; verify the current source before changing them.
+[[keys.command]]
+key = "alt+c"
+type = "shell"
+command = '"$HOME/.local/bin/herdr-next-to-current" workspace'
+description = "new Space below current"
 
-Once adjacent creation works, route Alt+T to `herdr-next-to-current tab` and Alt+C to `herdr-next-to-current workspace` through detached Herdr custom commands. Resolve native/custom binding conflicts before enabling them. Do not change the live creation bindings as part of the initial scaffold.
+[[keys.command]]
+key = "alt+shift+c"
+type = "popup"
+command = '"$HOME/.local/bin/herdr-next-to-current" reorder'
+description = "move current Space before number"
+width = "80%"
+height = "80%"
+```
 
-All Herdr configuration edits must go through the **chezmoi source**, in a sibling topic worktree. The source file is `private_dot_config/herdr/config.toml`; its deployed target is `~/.config/herdr/config.toml`. Inspect the rendered diff for that exact target, obtain the required review, and apply only that target when deployment is requested. Never edit the deployed config directly. The current source and deployed config were verified to match during scaffolding; preserve later user changes.
+The popup is a real terminal and receives input without adding a tab or split.
+It receives `HERDR_ACTIVE_*` context; do not depend on `HERDR_PANE_ID` existing
+inside it. [Custom command documentation](https://herdr.dev/docs/configuration/#custom-command-keybindings)
+describes these launch modes and environment variables.
 
-Windows Terminal's default pane shortcuts overlap with all eight modified arrows. Its [pane documentation](https://learn.microsoft.com/en-us/windows/terminal/panes) explains the defaults. Free those keys locally in Windows Terminal; a remote helper cannot recover keys intercepted before WSL or SSH.
+The existing `workspace-order` plugin supplies cursor movement and repeated
+up/down reordering, followed by focus on Enter. Its
+[documented interaction](https://github.com/pdjsh/herdr-plugins#workspace-order)
+differs from this numeric source-to-anchor operation and omits adjacent creation.
+An optional plugin manifest can package these same Python commands later, if
+plugin discovery or distribution becomes useful.
 
-## Remaining design decisions
+## Implementation sequence and acceptance
 
-These are the frontier for `grill-with-docs`; facts should be investigated by the agent and policy choices settled with the user.
+1. **Context and transport.** Add bounded requests, strict context resolution,
+   fake-server fixtures, and version checks. Prove named-session isolation,
+   stale/moved-pane handling, and correct rejection without mutation.
+2. **Creation.** Implement `workspace`, ID-anchored placement, configured/explicit
+   cwd, focus control, lock behavior, and partial results. Cover middle/end/only
+   workspace, grouped-source rejection, source deletion, move/focus failure,
+   repeated triggers, and lost create responses without duplicate creation.
+3. **Movement and TUI.** Implement `reorder`'s noninteractive forms, then the
+   popup. Exercise moving up/down, first/last, self/already-adjacent, duplicate
+   labels, more than nine rows, changed order while typing, target deletion,
+   cancellation, resize, scrolling, and groups mixed with standalone workspaces.
+   Verify source focus and pane/process identities survive movement.
+4. **Disposable-session verification.** Run representative workflows against an
+   isolated Herdr 0.9.3 session, with separate config/socket/state. Verify popup
+   context, native cwd policy, actual sidebar order, focus behavior with two
+   clients, and restoration of terminal settings on success/error/cancel.
+   Never perform these experiments against the user's working session.
+5. **Installation and dotfiles integration.** Run lint, package build, meaningful
+   workflow tests, and an isolated tool install. Install from merged primary
+   `main` with `just sync`; task worktrees use `uv run`. Prepare a separate
+   chezmoi topic change for bindings, the existing my-git-utils-style bootstrap,
+   and safe `daily-update` participation. Inspect source and deployed targets,
+   validate the combined Herdr config, and test bootstrap/update skips.
 
-- What explicit source/socket selectors should the CLI expose, and how should ambiguous context fail?
-- Does first-release workspace support include grouped Git worktrees? Literal visual adjacency may conflict with preserving the existing group structure.
-- What cwd and focus guarantees are possible when clients view different tabs or workspaces?
-- What should rapid repeated creation do: always use the captured source, or intentionally build a chain?
-- Should manual tab/workspace movement become resource subcommands, or stay in the existing Herdr bindings and mover?
-- What output and exit-code contract should distinguish success from a preserved, partially completed creation?
-- Is a native Herdr plugin manifest valuable after the standalone command and custom bindings work?
+Implement behavior tests with `unittest` and a fake socket server; no new runtime
+dependency is required. Use small exhaustive order cases to catch both movement
+directions and preservation of uninvolved rows. Use a PTY for terminal input,
+resize, cancellation, and cleanup tests. Retain `just check` for lint/build and
+add a test recipe when functional behavior exists.
 
-## Delivery sequence
+Dotfiles integration must edit sources only:
 
-1. **Project starting point:** uv package, the correctly named console entry point, proposed help interface, build/lint checks, revised plan, and GitHub publication.
-2. **Agent-flow setup:** use `setup-matt-pocock-skills` to settle issue tracker and steering-file choices and establish domain-document conventions. A GitHub tracker is a reasonable recommendation for this repository; the setup skill asks before selecting it.
-3. **Design interview:** use `grill-with-docs` to settle the frontier and retain vocabulary and ADRs. Use a disposable-session prototype only where a runnable check is necessary to establish Herdr behavior.
-4. **Executable specification:** turn the agreed design into acceptance criteria. If it spans sessions, use `to-spec` then `to-tickets`; otherwise proceed to `implement` with the agreed plan.
-5. **Functional slices:** implement transport/context, adjacent tab creation, then ordinary workspace creation. Drive meaningful end-to-end tests with a fake socket server and verify actual API behavior in a disposable Herdr session.
-6. **Integration:** install from merged main, prepare the chezmoi bootstrap and daily-update change, and add Herdr custom creation shortcuts after focused checks.
-7. **Review and publish:** commit task changes, run Standards and Spec review for the functional implementation, obtain local rebase/fast-forward merge confirmation, then push explicitly authorized repositories. Run `retro` after the build.
-
-## Acceptance checks for the working release
-
-| Check | Required outcome |
+| Chezmoi source | Absolute deployed target |
 | --- | --- |
-| uv build and isolated tool install | Command is exactly `herdr-next-to-current`; import package is correct |
-| Tab creation in the middle and at the end | New ID immediately follows source; all other IDs retain relative order |
-| Ordinary workspace creation | Same placement semantics on the intended server |
-| Invocation context differs from global focus | Captured source determines placement |
-| Multiple named sessions and SSH | No silent fallback to another socket or machine |
-| Focus enabled and `--no-focus` | Documented client focus behavior holds |
-| Label, explicit cwd, omitted cwd | Values and configured source policy behave as documented |
-| Move/focus failure after creation | Created process survives; new ID and completed stage are reported |
-| Lost create response | No automatic second creation |
-| Concurrent helper calls and unrelated reorder | Own calls serialize; continued contention produces a bounded failure |
-| Git worktree group | Agreed group policy is enforced before unsupported mutation |
-| Fresh chezmoi init with apply | Checkout is cloned and console command is installed |
-| Existing checkout and missing prerequisites | Local work survives; diagnostics include a retry command |
-| Daily-update | Same safety/skip rules and editable reinstall as my-git-utils |
+| `private_dot_config/herdr/config.toml` | `/home/vimkim/.config/herdr/config.toml` |
+| `private_dot_config/my-scripts/bin/executable_daily-update` | `/home/vimkim/.config/my-scripts/bin/daily-update` |
+| `.chezmoiscripts/run_once_after_install-herdr-next-to-current.sh` | Apply-time bootstrap script; no persistent target |
 
-## Next prompt
+Bootstrap must preserve occupied/dirty checkouts and report retry guidance. A
+run-once script that reports success after skipping an install will not retry
+unchanged content automatically. Follow each repository's then-current Git and
+deployment guidance: commit, obtain local integration approval, complete required
+post-merge deployment, and clean up. A push or publication requires its own
+explicit request. Verify shortcut delivery on the actual terminal; remotely
+intercepted host shortcuts cannot be repaired by the helper.
 
-Open the canonical project checkout and use:
+## Next implementation request
 
-```text
-$setup-matt-pocock-skills
-
-Set up this repository for the engineering flow. Recommend GitHub Issues,
-single-context GLOSSARY.md and docs/adr, and the same lightweight conventions
-as ~/gh/my-git-utils. Resolve the setup skill's choices before writing them.
-
-Then use $grill-with-docs on PLAN.md for herdr-next-to-current. Settle source
-context, grouped workspaces, cwd, multi-client focus, partial failures, CLI
-output, and chezmoi bootstrap/daily-update behavior. Keep the binary name
-herdr-next-to-current and the workspace/tab resource interface. Investigate
-facts yourself, ask me only decisions that change the design, and retain the
-agreed vocabulary and decisions. End with the next implementation prompt;
-do not start the functional build during the interview.
-```
-
-This follows the ask-matt route provided in the session: setup first, then the stateful interview for a project with a working directory. The user has not yet invoked that engineering interview; the initial scaffold is its input.
+Implement the two workspace workflows in this plan, keeping the existing command
+and packaging. Start with context/transport and a fake-server workflow test, then
+creation, noninteractive reorder, and the numeric popup. Preserve the existing
+tab stub and unrelated changes. Treat group expansion as a separate decision if
+requested. Validate live behavior only in a disposable session; prepare and
+review dotfiles integration separately. Do not infer permission to mutate the
+working Herdr session, deploy dotfiles, publish issues, or push from this design.

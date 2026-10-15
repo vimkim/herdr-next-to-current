@@ -1,18 +1,18 @@
 # herdr-next-to-current
 
-A standalone Python uv tool for opening Herdr tabs and workspaces immediately after the current item.
+A standalone Python uv tool planned for opening a Herdr Space immediately below the current Space and moving the current Space before a numbered destination. Herdr's API calls these `workspaces`.
 
-**Status: initial scaffold.** The installed command provides `--help`, `--version`, and the proposed `workspace` / `tab` interface. Creation currently exits with an explicit error and makes no Herdr changes. The implementation and chezmoi integration are described in [PLAN.md](PLAN.md).
+**Status: initial scaffold.** The installed command provides `--help`, `--version`, and the proposed `workspace` / `tab` interface. Creation currently exits with an explicit error and makes no Herdr changes. The numbered `reorder` TUI is planned. The implementation and chezmoi integration are described in [PLAN.md](PLAN.md).
 
 ## Intended commands
 
 ```sh
 herdr-next-to-current workspace --label review
-herdr-next-to-current tab --label logs
-herdr-next-to-current tab --cwd ~/project --no-focus
+herdr-next-to-current workspace --cwd ~/project --no-focus
+herdr-next-to-current reorder
 ```
 
-The planned workflow captures the current item, creates a new one, repositions it, verifies the order, and focuses it unless `--no-focus` was requested. It uses Herdr's socket API, rather than maintaining a Herdr fork.
+Creation captures the invoking workspace, creates below it, verifies the order, and focuses the new workspace unless `--no-focus` was requested. The reorder popup lists numbered workspaces; entering a number moves the invoking workspace before that row while preserving focus. Both workflows use Herdr's socket interface. Adjacent tab creation remains a later milestone.
 
 ## Installation
 
@@ -42,6 +42,6 @@ just check
 
 `uv.lock` is tracked. Virtual environments, build outputs, and tool caches are ignored.
 
-## Next flow
+## Next step
 
-The `ask-matt` route is project setup, then `grill-with-docs` to settle the remaining design choices. The ready-to-use next prompt is in [PLAN.md](PLAN.md#next-prompt).
+Review the [workspace design and implementation sequence](PLAN.md), including the initial Git worktree group limit. Its final section contains the implementation request. No functional build or deployment is included in this design update.
