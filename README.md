@@ -53,9 +53,18 @@ cd ~/gh/herdr-next-to-current
 just sync
 ```
 
-`just sync` installs the editable console command from the primary `main` checkout.
-Use `uv run` inside task worktrees. An isolated install can use `UV_TOOL_DIR` and
-`UV_TOOL_BIN_DIR` with `uv tool install .` without replacing your normal command.
+`just sync` runs `uv tool install --reinstall .` from the primary `main` checkout.
+This regular installation runs without the source checkout or its `.venv`.
+Run sync after source changes, including changes without a version bump.
+The next sync also converts an existing editable installation. Use `uv run` for development.
+An isolated install can use `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` with
+`uv tool install --reinstall .` without replacing your normal command.
+
+Use `uv tool dir --bin` to locate the commands, or `UV_TOOL_BIN_DIR` to select another directory.
+Run `uv tool update-shell` if that directory is absent from PATH.
+Uninstall with `uv tool uninstall herdr-next-to-current`.
+Tool installation resolves dependencies separately from the project's `uv.lock`.
+This package has no third-party runtime dependencies.
 
 Chezmoi integration is prepared separately: Alt+C creates quietly; Alt+Shift+C
 opens the popup; Alt+W, existing workspace up/down helpers, and tab bindings stay
