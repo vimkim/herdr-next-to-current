@@ -164,6 +164,9 @@ def create_tab_after(client, workspace, source, *, label=None, cwd=None, focus=T
                     raise ClientError("focus response did not confirm the new tab", uncertain=True)
                 stage = "focused"
         return Outcome("complete", source, new_id, stage)
+    except KeyboardInterrupt as error:
+        # Creation may have completed before the interrupt; retain its returned identity.
+        raise PlacementError("interrupted", code=4, stage=stage, new_id=new_id) from error
     except (ClientError, PlacementError, OSError) as error:
         code = 4 if getattr(error, "uncertain", False) else (3 if new_id else 2)
         if isinstance(error, PlacementError) and error.code == 4:

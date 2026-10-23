@@ -3,7 +3,11 @@ import contextlib
 import io
 import json
 import os
+import signal
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -405,3 +409,59 @@ class Tabs(unittest.TestCase):
         self.assertEqual(notification["params"]["title"], "tab operation failed")
         log = Path(self.tmp.name) / "herdr-next-to-current/failures.log"
         self.assertEqual(json.loads(log.read_text())["new_id"], "new-tab-1")
+
+    def test_process_interrupt_preserves_created_identity_when_known(self):
+        for method, stage in (
+            ("tab.create", "validated"),
+            ("tab.move", "created"),
+            ("tab.focus", "placed"),
+        ):
+            with self.subTest(method=method):
+                self.server.hooks.clear()
+                entered, release = threading.Event(), threading.Event()
+
+                def blocked(params, method=method, entered=entered, release=release):
+                    self.server.dispatch(method, params)
+                    entered.set()
+                    release.wait(timeout=5)
+                    return DROP
+
+                self.server.hooks[method] = blocked
+                env = {k: v for k, v in os.environ.items() if not k.startswith("HERDR_")}
+                env["XDG_STATE_HOME"] = self.tmp.name
+                process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        "from herdr_next_to_current.cli import main; raise SystemExit(main())",
+                        "--socket",
+                        self.server.path,
+                        "--source-workspace",
+                        "b",
+                        "--source-tab",
+                        "B",
+                        "tab",
+                        "--json",
+                    ],
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                try:
+                    self.assertTrue(entered.wait(timeout=5), "CLI did not send mutation")
+                    process.send_signal(signal.SIGINT)
+                    release.set()
+                    output, error = process.communicate(timeout=5)
+                    self.assertEqual(process.returncode, 4, output + error)
+                    result = json.loads(output)
+                    self.assertEqual((result["stage"], result["error"]), (stage, "interrupted"))
+                    if method == "tab.create":
+                        self.assertIsNone(result["new_id"])
+                    else:
+                        self.assertIn(result["new_id"], [t["tab_id"] for t in self.listed()])
+                finally:
+                    release.set()
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate(timeout=5)

@@ -8,15 +8,17 @@ also reports version 0.9.3 and protocol 22.
 
 ## Adjacent tab checks, 2026-10-23
 
-- `just check` passes: Ruff lint and format checks, 76 behavior tests pass,
+- `just check` passes: Ruff lint and format checks, 77 behavior tests pass,
   one opt-in native test skips, and wheel/source distributions build.
-- Twenty-four tab tests use the real CLI and fake Unix socket, or the public
+- Twenty-five tab tests use the real CLI and fake Unix socket, or the public
   workflow interface for captured-context and lock checks. They cover middle,
   final, and only-tab sources, both focus modes, labels, cwd, custom commands,
   explicit selectors, moved/stale panes, missing/conflicting context, unsupported
   servers, and malformed responses. They also cover contention, bounded locking,
   partial failures, lost create/move/focus responses, and failed reconciliation.
   Known created tabs survive failures. Lost creation never infers an ID or retries.
+  A real subprocess receives SIGINT during create, move, and focus requests.
+  It reports uncertainty and retains the new ID whenever creation returned that ID.
 - `HERDR_LIVE_TEST=1 uv run python -m unittest tests.test_live -v` passes on
   Herdr 0.9.3/protocol 22 with two disposable PTY clients. It verifies middle,
   final, and only-tab placement, default focus, `--no-focus`, label, follow cwd,
