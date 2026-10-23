@@ -1,7 +1,7 @@
 [project]
 name = "herdr-next-to-current"
 version = "0.1.0.dev0"
-description = "Create and reorder Herdr Spaces relative to the invoking Space"
+description = "Create adjacent Herdr Spaces and tabs, and reorder Spaces"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

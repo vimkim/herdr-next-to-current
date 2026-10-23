@@ -1,13 +1,16 @@
 # herdr-next-to-current
 
 Create a Herdr **Space immediately below the invoking Space**, or move the invoking
-Space before a numbered destination. Herdr's socket API calls Spaces `workspaces`.
+Space before a numbered destination. Create a **tab immediately to the right of
+the invoking tab** within the same Space. Herdr's socket API calls Spaces `workspaces`.
 Requires Linux/WSL, Python 3.11+, and Herdr **0.9.3 / protocol 22**. There are no
 runtime dependencies beyond Python's standard library, including `curses`.
 
 ```sh
 herdr-next-to-current workspace
 herdr-next-to-current workspace --label review --cwd ~/project --no-focus
+herdr-next-to-current tab
+herdr-next-to-current tab --label review --cwd ~/project --no-focus
 herdr-next-to-current reorder
 herdr-next-to-current reorder --before 2
 herdr-next-to-current reorder --before-id WORKSPACE_ID --json
@@ -16,10 +19,11 @@ herdr-next-to-current reorder --to-end
 
 Creation preserves Herdr's directory policy unless `--cwd` supplies an explicit
 absolute directory. It creates without focus, places and verifies the returned
-Space ID, then focuses it unless `--no-focus` is set. Public focus is session-wide.
+Space or tab ID, then focuses it unless `--no-focus` is set. Public focus is session-wide.
 The source is captured once; queued creations from the same source appear newest
-first. Existing panes and processes survive reordering. Tab creation remains an
-explicit, unimplemented stub.
+first. Existing panes and processes survive reordering.
+For tabs, `[A, B, C]` becomes `[A, B, NEW, C]` when invoked from B.
+A final source receives a new final tab. Tab placement does not move Spaces or their groups.
 
 The popup numbers fully expanded sidebar rows, includes the current Space, and
 adds an `N+1` end-of-list choice. Type multiple digits and Enter to move; use
@@ -34,6 +38,7 @@ Explicit selectors take precedence. An explicit socket requires an explicit sour
 
 ```sh
 herdr-next-to-current --socket /path/to/session.sock --source-workspace ID workspace
+herdr-next-to-current --socket /path/to/session.sock --source-workspace ID --source-tab TAB_ID tab
 ```
 
 Custom shell/popup commands use `HERDR_ACTIVE_WORKSPACE_ID` with
@@ -42,6 +47,18 @@ including moved panes; workspace-only context uses `HERDR_WORKSPACE_ID`. Stale o
 missing context fails without choosing server-wide focus. Outside Herdr, supply
 both explicit selectors. Options `--socket` and `--source-workspace` precede the
 subcommand; `--json`, `--quiet`, and workflow options follow it.
+
+Tab commands require both workspace and tab identities. Custom commands supply
+`HERDR_ACTIVE_WORKSPACE_ID` and `HERDR_ACTIVE_TAB_ID`. Pane commands resolve both
+through one `pane.current` call. Without a pane ID, `HERDR_WORKSPACE_ID` and
+`HERDR_TAB_ID` must both exist. An incomplete custom-command context fails instead
+of falling back to inherited pane variables. Explicit tab selectors require both
+`--source-workspace` and `--source-tab`, before the subcommand. They override
+inherited context. Every tab list specifies the captured workspace.
+
+When tab creation omits `--cwd`, Herdr applies its configured directory policy
+using the captured workspace's backend active tab and pane. The socket operation
+cannot pin that policy to the invoking tab. Use `--cwd` for an exact directory.
 
 ## Installation
 
@@ -66,9 +83,10 @@ Uninstall with `uv tool uninstall herdr-next-to-current`.
 Tool installation resolves dependencies separately from the project's `uv.lock`.
 This package has no third-party runtime dependencies.
 
-Chezmoi integration is prepared separately: Alt+C creates quietly; Alt+Shift+C
-opens the popup; Alt+W, existing workspace up/down helpers, and tab bindings stay
-available. Source changes disable native creation so it cannot intercept Alt+C.
+Chezmoi integration binds Alt+C to quiet Space creation and Alt+Shift+C to the popup.
+The separately prepared Alt+T change invokes quiet adjacent tab creation.
+Source changes disable native creation so it cannot intercept these shortcuts.
+Alt+W, existing workspace up/down helpers, and tab movement bindings remain available.
 The bootstrap preserves occupied/dirty/topic checkouts and returns failure for
 retryable skipped installs. Daily updates require clean primary `main` tracking
 `origin/main` with the expected GitHub origin, and skip ahead/diverged checkouts.
@@ -83,7 +101,7 @@ source ID, new ID when known, completed stage, error, and exit code.
 | --- | --- |
 | 0 | Complete, already placed, or cancelled before a mutation |
 | 2 | Usage/context/group/unsupported-server error or pre-mutation failure |
-| 3 | New Space preserved; placement or focus is incomplete |
+| 3 | New Space or tab preserved; placement or focus is incomplete |
 | 4 | A mutation's outcome could not be established; inspect before retrying |
 
 A lost create response never causes a retry or an inferred new ID. A lost move
@@ -108,9 +126,11 @@ HERDR_LIVE_TEST=1 uv run python -m unittest tests.test_live -v
 The opt-in live test starts its own Herdr server, two PTY clients, config, state,
 and sockets in a temporary directory. It never selects your working session.
 It exercises real shortcut delivery and popup context as well as cwd, placement,
-focus, reorder, and pane/process identity. Host terminal shortcut interception
+focus, reorder, adjacent tabs, and pane/process identity. Host terminal shortcut interception
 still needs a check on the actual client terminal.
 
 [PLAN.md](PLAN.md) records the implementation contract; the
 [API evidence](docs/workspace-order-evidence.md) explains the versioned sidebar
 projection and ID-anchored move operation.
+The [tab API evidence](docs/tab-order-evidence.md) records tab insertion semantics
+and the limits of separate creation, movement, and focus requests.

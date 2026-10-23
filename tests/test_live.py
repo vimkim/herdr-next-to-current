@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 from herdr_next_to_current.client import Client, ClientError
 from herdr_next_to_current.placement import capture, create_after, move_before, read_state
+from herdr_next_to_current.tabs import capture_tab, create_tab_after, read_tabs
 
 
 @unittest.skipUnless(
@@ -52,12 +53,15 @@ class Live(unittest.TestCase):
                 "import json, os\nfrom pathlib import Path\n"
                 f"Path({str(root / 'popup-context.json')!r}).write_text("
                 "json.dumps({k:v for k,v in os.environ.items() if k in "
-                "('HERDR_ACTIVE_WORKSPACE_ID','HERDR_SOCKET_PATH','HERDR_PANE_ID')}))\n"
+                "('HERDR_ACTIVE_WORKSPACE_ID','HERDR_ACTIVE_TAB_ID',"
+                "'HERDR_SOCKET_PATH','HERDR_PANE_ID')}))\n"
                 "from herdr_next_to_current.cli import main\nraise SystemExit(main())\n"
             )
             command = shlex.join([sys.executable, str(helper)])
             config += (
-                "[keys]\nnew_workspace = []\n"
+                "[keys]\nnew_workspace = []\nnew_tab = []\n"
+                '[[keys.command]]\nkey = "alt+t"\ntype = "shell"\n'
+                f"command = {json.dumps(command + ' tab --quiet')}\n"
                 '[[keys.command]]\nkey = "alt+c"\ntype = "shell"\n'
                 f"command = {json.dumps(command + ' workspace --quiet')}\n"
                 '[[keys.command]]\nkey = "alt+shift+c"\ntype = "popup"\n'
@@ -164,6 +168,80 @@ class Live(unittest.TestCase):
 
                     self.assertTrue(identities(snapshot).items() <= identities(final).items())
 
+                    # Real tab creation: middle, final, and only-tab sources, both focus modes.
+                    tab_a = source["tab"]["tab_id"]
+                    tab_b, tab_c = [
+                        client.call(
+                            "tab.create",
+                            {"workspace_id": source_id, "focus": False},
+                            "tab_created",
+                            mutation=True,
+                        )["tab"]["tab_id"]
+                        for _ in range(2)
+                    ]
+                    before_tabs = client.call("session.snapshot", {}, "session_snapshot")[
+                        "snapshot"
+                    ]
+                    processes = {
+                        p["pane_id"]: client.call(
+                            "pane.process_info", {"pane_id": p["pane_id"]}, "pane_process_info"
+                        )["process_info"]["shell_pid"]
+                        for p in before_tabs["panes"]
+                    }
+                    _, pane_workspace, pane_tab = capture_tab(
+                        None,
+                        None,
+                        None,
+                        {"HERDR_SOCKET_PATH": client.path, "HERDR_PANE_ID": pane_id},
+                    )
+                    self.assertEqual((pane_workspace, pane_tab), (source_id, tab_a))
+                    middle = create_tab_after(client, source_id, tab_b, label="review")
+                    self.assertEqual(
+                        read_tabs(client, source_id).ids, [tab_a, tab_b, middle.new_id, tab_c]
+                    )
+                    self.assertTrue(
+                        next(
+                            t
+                            for t in read_tabs(client, source_id).rows
+                            if t["tab_id"] == middle.new_id
+                        )["focused"]
+                    )
+                    last = create_tab_after(client, source_id, tab_c, focus=False)
+                    self.assertEqual(read_tabs(client, source_id).ids[-2:], [tab_c, last.new_id])
+                    other_tab = read_tabs(client, other).ids[0]
+                    only = create_tab_after(client, other, other_tab, focus=False)
+                    self.assertEqual(read_tabs(client, other).ids, [other_tab, only.new_id])
+                    self.assertTrue(
+                        next(
+                            t
+                            for t in read_tabs(client, source_id).rows
+                            if t["tab_id"] == middle.new_id
+                        )["focused"]
+                    )
+                    after_tabs = client.call("session.snapshot", {}, "session_snapshot")["snapshot"]
+                    self.assertTrue(
+                        identities(before_tabs).items() <= identities(after_tabs).items()
+                    )
+                    for old_pane, pid in processes.items():
+                        self.assertEqual(
+                            client.call(
+                                "pane.process_info", {"pane_id": old_pane}, "pane_process_info"
+                            )["process_info"]["shell_pid"],
+                            pid,
+                        )
+                    middle_pane = next(
+                        p for p in after_tabs["panes"] if p["tab_id"] == middle.new_id
+                    )
+                    self.assertEqual(middle_pane["cwd"], str(root / "source"))
+                    self.assertEqual(
+                        next(
+                            t
+                            for t in read_tabs(client, source_id).rows
+                            if t["tab_id"] == middle.new_id
+                        )["label"],
+                        "review",
+                    )
+
                 def wait_until(predicate, label):
                     deadline = time.monotonic() + 5
                     output = b""
@@ -195,6 +273,46 @@ class Live(unittest.TestCase):
                     return rows.index(new_id) == rows.index(invoking_id) + 1
 
                 wait_until(adjacent, "shortcut places below its invoking client Space")
+
+                shortcut_a = read_tabs(client, new_id).ids[0]
+                shortcut_b, shortcut_c = [
+                    client.call(
+                        "tab.create",
+                        {"workspace_id": new_id, "focus": False},
+                        "tab_created",
+                        mutation=True,
+                    )["tab"]["tab_id"]
+                    for _ in range(2)
+                ]
+                client.call("tab.focus", {"tab_id": shortcut_b}, "tab_info", mutation=True)
+                # Give both PTY clients time to receive the public focus projection.
+                deadline = time.monotonic() + 0.3
+                while time.monotonic() < deadline:
+                    for fd in select.select(terminals[::2], [], [], 0.03)[0]:
+                        os.read(fd, 65536)
+                shortcut_ids = read_tabs(client, new_id).ids
+                os.write(terminals[0], b"\x1bt")
+                wait_until(
+                    lambda _: len(read_tabs(client, new_id).ids) == 4,
+                    "Alt+T creates through the real shell binding",
+                )
+                shortcut_new = next(
+                    t for t in read_tabs(client, new_id).ids if t not in shortcut_ids
+                )
+                wait_until(
+                    lambda _: any(
+                        t["tab_id"] == shortcut_new and t["focused"]
+                        for t in read_tabs(client, new_id).rows
+                    ),
+                    "Alt+T focuses the new tab",
+                )
+                self.assertEqual(
+                    read_tabs(client, new_id).ids,
+                    [shortcut_a, shortcut_b, shortcut_new, shortcut_c],
+                )
+                tab_context = json.loads((root / "popup-context.json").read_text())
+                self.assertEqual(tab_context["HERDR_ACTIVE_TAB_ID"], shortcut_b)
+                self.assertEqual(tab_context["HERDR_ACTIVE_WORKSPACE_ID"], new_id)
                 os.write(terminals[0], b"\x1bC")
                 wait_until(
                     lambda output: b"Insert current Space before number" in output,
@@ -233,6 +351,10 @@ class Live(unittest.TestCase):
                     explicit_created = create_after(
                         client, popup_source, cwd=str(root / "explicit"), focus=False
                     )
+                    policy_tab = create_tab_after(client, source_id, tab_b, focus=False)
+                    explicit_tab = create_tab_after(
+                        client, source_id, tab_b, cwd=str(root / "explicit"), focus=False
+                    )
                 panes = client.call("session.snapshot", {}, "session_snapshot")["snapshot"]["panes"]
                 self.assertEqual(
                     next(p for p in panes if p["workspace_id"] == policy_created.new_id)["cwd"],
@@ -242,9 +364,18 @@ class Live(unittest.TestCase):
                     next(p for p in panes if p["workspace_id"] == explicit_created.new_id)["cwd"],
                     str(root / "explicit"),
                 )
+                self.assertEqual(
+                    next(p for p in panes if p["tab_id"] == policy_tab.new_id)["cwd"],
+                    str(root / "policy"),
+                )
+                self.assertEqual(
+                    next(p for p in panes if p["tab_id"] == explicit_tab.new_id)["cwd"],
+                    str(root / "explicit"),
+                )
                 print(
                     "Verified Herdr 0.9.3: two clients, source cwd, adjacency, focus, "
-                    "reorder, pane/process identities, Alt+C and Alt+Shift+C popup context"
+                    "tab creation/placement/policy/focus, reorder, pane/process identities, "
+                    "Alt+T, Alt+C and Alt+Shift+C popup context"
                 )
             finally:
                 for process in clients:

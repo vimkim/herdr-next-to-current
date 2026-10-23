@@ -24,6 +24,16 @@ def row(workspace_id, *, key=None, linked=False):
     return result
 
 
+def tab(tab_id, workspace_id="b", *, focused=False):
+    return {
+        "tab_id": tab_id,
+        "workspace_id": workspace_id,
+        "label": "duplicate label",
+        "focused": focused,
+        "pane_count": 1,
+    }
+
+
 class FakeHerdr:
     def __init__(self, ids=("a", "b", "c")):
         self.rows = [row(item) for item in ids]
@@ -32,6 +42,8 @@ class FakeHerdr:
         self.hooks = {}
         self.version, self.protocol = "0.9.3", 22
         self.pane_workspace = "b"
+        self.pane_tab = "b:t1"
+        self.tabs = {item: [tab(item + ":t1", item)] for item in ids}
         self.serial = 0
         self.guard = threading.RLock()
         self.tmp = tempfile.TemporaryDirectory(prefix="hntc-")
@@ -77,7 +89,15 @@ class FakeHerdr:
         return [
             r
             for r in self.requests
-            if r["method"] in ("workspace.create", "workspace.move_block", "workspace.focus")
+            if r["method"]
+            in (
+                "workspace.create",
+                "workspace.move_block",
+                "workspace.focus",
+                "tab.create",
+                "tab.move",
+                "tab.focus",
+            )
         ]
 
     def dispatch(self, method, params):
@@ -88,7 +108,45 @@ class FakeHerdr:
         if method == "pane.current":
             if self.pane_workspace is None:
                 return {"code": "not_found", "message": "stale pane"}
-            return {"type": "pane_current", "pane": {"workspace_id": self.pane_workspace}}
+            return {
+                "type": "pane_current",
+                "pane": {
+                    "workspace_id": self.pane_workspace,
+                    "tab_id": self.pane_tab,
+                },
+            }
+        if method == "tab.list":
+            return {"type": "tab_list", "tabs": copy.deepcopy(self.tabs[params["workspace_id"]])}
+        if method == "tab.create":
+            self.serial += 1
+            new = tab(f"new-tab-{self.serial}", params["workspace_id"])
+            new["label"] = params.get("label", new["label"])
+            self.tabs[params["workspace_id"]].append(new)
+            return {"type": "tab_created", "tab": new, "root_pane": {}}
+        if method == "tab.move":
+            records = next(
+                rows
+                for rows in self.tabs.values()
+                if any(t["tab_id"] == params["tab_id"] for t in rows)
+            )
+            index = next(i for i, t in enumerate(records) if t["tab_id"] == params["tab_id"])
+            # Herdr 0.9.3 Workspace::move_tab uses a slot before removal.
+            destination = params["insert_index"]
+            moved = records.pop(index)
+            records.insert(destination - int(index < destination), moved)
+            return {"type": "tab_list", "tabs": copy.deepcopy(records)}
+        if method == "tab.focus":
+            focused = None
+            for workspace_id, records in self.tabs.items():
+                for record in records:
+                    record["focused"] = record["tab_id"] == params["tab_id"]
+                    if record["focused"]:
+                        focused = record
+                        for workspace in self.rows:
+                            workspace["focused"] = workspace["workspace_id"] == workspace_id
+                            if workspace["focused"]:
+                                workspace["active_tab_id"] = record["tab_id"]
+            return {"type": "tab_info", "tab": copy.deepcopy(focused)}
         if method == "workspace.create":
             self.serial += 1
             new = row(f"new-{self.serial}")

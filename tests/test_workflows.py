@@ -351,12 +351,6 @@ class Workflows(unittest.TestCase):
             for line in log.read_text().splitlines():
                 self.assertIsInstance(json.loads(line), dict)
 
-    def test_tab_remains_explicit_stub(self):
-        code, _, error = self.cli("tab")
-        self.assertEqual(code, 2)
-        self.assertIn("not implemented", error)
-        self.assertFalse(self.server.requests)
-
     def test_standalone_create_and_move_among_all_interleaved_group_orders(self):
         for ordering in itertools.permutations(("root", "child", "a", "b")):
 

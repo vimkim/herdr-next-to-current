@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .client import Client, ClientError
 from .placement import Outcome, PlacementError, capture, create_after, move_before
+from .tabs import capture_tab, create_tab_after
 
 
 def failure_log(outcome):
@@ -34,7 +35,7 @@ def failure_log(outcome):
     return path
 
 
-def report_failure(client, outcome):
+def report_failure(client, outcome, resource="Space"):
     try:
         path = failure_log(outcome)
     except OSError as error:
@@ -44,7 +45,7 @@ def report_failure(client, outcome):
         try:
             client.call(
                 "notification.show",
-                {"title": "Space operation failed", "body": f"{outcome.error}\nLog: {path}"},
+                {"title": f"{resource} operation failed", "body": f"{outcome.error}\nLog: {path}"},
                 "notification_show",
                 mutation=True,
             )
@@ -65,7 +66,8 @@ def nonempty(value):
 
 def parser():
     root = ArgumentParser(
-        prog="herdr-next-to-current", description="Create and order Herdr Spaces beside the caller."
+        prog="herdr-next-to-current",
+        description="Create and order Herdr Spaces and tabs beside the caller.",
     )
     root.add_argument(
         "--version", action="version", version=f"%(prog)s {version('herdr-next-to-current')}"
@@ -73,6 +75,9 @@ def parser():
     root.add_argument("--socket", type=nonempty, metavar="PATH", help="Requires an explicit source")
     root.add_argument(
         "--source-workspace", type=nonempty, metavar="ID", help="Pin the source Space"
+    )
+    root.add_argument(
+        "--source-tab", type=nonempty, metavar="ID", help="Pin the source tab (tab only)"
     )
     commands = root.add_subparsers(dest="resource", required=True)
     for resource in ("workspace", "tab"):
@@ -98,8 +103,8 @@ def main(argv=None):
     try:
         args = parser().parse_args(argv)
         source = args.source_workspace
-        if args.resource == "tab":
-            raise PlacementError("tab creation is not implemented; see PLAN.md", stage="context")
+        if args.source_tab is not None and args.resource != "tab":
+            raise PlacementError("--source-tab requires the tab subcommand", stage="usage")
         interactive = args.resource == "reorder" and not (
             args.before is not None or args.before_id is not None or args.to_end
         )
@@ -114,11 +119,22 @@ def main(argv=None):
             source = context.get("HERDR_WORKSPACE_ID")
         if socket_path and (args.socket is None or args.source_workspace):
             client = Client(socket_path)
-        client, source = capture(args.socket, args.source_workspace, context, client=client)
+        if args.resource == "tab":
+            source = args.source_tab or context.get("HERDR_ACTIVE_TAB_ID")
+            client, workspace, source = capture_tab(
+                args.socket, args.source_workspace, args.source_tab, context, client=client
+            )
+            outcome = create_tab_after(
+                client, workspace, source, label=args.label, cwd=args.cwd, focus=not args.no_focus
+            )
+        else:
+            client, source = capture(args.socket, args.source_workspace, context, client=client)
         if args.resource == "workspace":
             outcome = create_after(
                 client, source, label=args.label, cwd=args.cwd, focus=not args.no_focus
             )
+        elif args.resource == "tab":
+            pass
         elif interactive:
             from .tui import run
 
@@ -143,12 +159,13 @@ def main(argv=None):
     except KeyboardInterrupt:
         # An interrupt could arrive after a mutation was sent. Never claim a safe cancel.
         outcome = Outcome("uncertain", source, stage="interrupted", error="interrupted", code=4)
+    resource = "tab" if getattr(args, "resource", None) == "tab" else "Space"
     if outcome.code:
-        report_failure(client, outcome)
+        report_failure(client, outcome, resource)
     if "--json" in argv:
         print(json.dumps(asdict(outcome)))
     elif outcome.code:
-        detail = f"; preserved new Space {outcome.new_id}" if outcome.new_id else ""
+        detail = f"; preserved new {resource} {outcome.new_id}" if outcome.new_id else ""
         print(
             f"herdr-next-to-current: {outcome.error}{detail} (stage: {outcome.stage})",
             file=sys.stderr,

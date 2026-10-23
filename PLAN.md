@@ -1,6 +1,6 @@
 # Herdr Spaces creation and ordering plan
 
-Updated: 2026-10-15. The two Space workflows and their tests are implemented.
+Updated: 2026-10-23. The two Space workflows and adjacent tab creation are implemented.
 This document retains the behavior contract; see [verification and local rollout](docs/verification.md)
 for execution evidence and the separately prepared chezmoi integration.
 
@@ -19,10 +19,44 @@ plugin is needed for the first release.
 
 Keep the established distribution, console command, Python package
 `herdr_next_to_current`, canonical checkout `~/gh/herdr-next-to-current`, Python
-3.11 minimum, Linux/WSL support, and editable uv installation from merged `main`.
-The numbered TUI expands the earlier adjacent-creation-only scope. Existing tab
-creation remains a later milestone; keep its scaffold's explicit error until it
-is implemented. Preserve the existing workspace up/down helper and tab bindings.
+3.11 minimum, Linux/WSL support, and regular uv tool installation from merged `main`.
+The numbered TUI expands the earlier adjacent-creation-only scope.
+The 2026-10-23 tab milestone supersedes the original tab exclusion.
+Preserve the existing workspace up/down helper and tab movement bindings.
+
+## Adjacent tab creation
+
+`herdr-next-to-current tab` creates immediately to the right of the invoking tab
+in the same workspace. It preserves `--label`, `--cwd`, `--no-focus`, `--json`,
+and `--quiet`. It focuses the new tab by default. A final source gets a final tab.
+
+Capture workspace and tab IDs before acquiring the existing per-socket mutation lock.
+Explicit context requires `--source-workspace` and `--source-tab` together.
+An explicit socket also requires both. Custom commands require both
+`HERDR_ACTIVE_WORKSPACE_ID` and `HERDR_ACTIVE_TAB_ID`, ahead of inherited pane context.
+Pane invocation resolves both IDs through one `pane.current` call.
+Workspace-only environment requires both `HERDR_WORKSPACE_ID` and `HERDR_TAB_ID`.
+Validate membership before creation and again before movement. Never substitute global focus.
+
+Create once with the captured `workspace_id` and `focus:false`.
+Keep the returned tab ID. Omit cwd unless explicitly supplied.
+Herdr's directory policy then uses the captured workspace's backend active pane,
+which can differ from the invoking tab. An explicit cwd overrides that policy.
+
+Read fresh order through `tab.list(workspace_id=...)`.
+Use `tab.move` with the insertion slot immediately after the captured source.
+That zero-based slot refers to the list before removal of the moved tab.
+Skip movement if already adjacent. Verify returned and fresh order by stable IDs,
+including the relative order of unrelated tabs. Verify adjacency before focus.
+Only tab order changes. Workspace groups do not restrict this workflow.
+
+The existing partial-failure contract applies. Preserve a known created tab.
+Never retry an uncertain create or infer its ID from a list difference.
+Reconcile lost move and focus responses with reads, without repeating mutations.
+Report conflicting order and stop. Creation, placement, and focus remain separate operations.
+See [tab API evidence](docs/tab-order-evidence.md) and [verification](docs/verification.md).
+
+## Space invariants
 
 Retain strict source resolution, no silent selection of server-wide focus, and
 default focus after successful creation with `--no-focus` available. Public focus
