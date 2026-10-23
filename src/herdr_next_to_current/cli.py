@@ -129,18 +129,16 @@ def main(argv=None):
             )
         else:
             client, source = capture(args.socket, args.source_workspace, context, client=client)
-        if args.resource == "workspace":
-            outcome = create_after(
-                client, source, label=args.label, cwd=args.cwd, focus=not args.no_focus
-            )
-        elif args.resource == "tab":
-            pass
-        elif interactive:
-            from .tui import run
+            if args.resource == "workspace":
+                outcome = create_after(
+                    client, source, label=args.label, cwd=args.cwd, focus=not args.no_focus
+                )
+            elif interactive:
+                from .tui import run
 
-            outcome = run(client, source, lambda failure: report_failure(client, failure))
-        else:
-            outcome = move_before(client, source, before=args.before_id, number=args.before)
+                outcome = run(client, source, lambda failure: report_failure(client, failure))
+            else:
+                outcome = move_before(client, source, before=args.before_id, number=args.before)
     except (PlacementError, ClientError, OSError) as error:
         outcome = Outcome(
             (

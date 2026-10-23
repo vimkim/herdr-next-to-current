@@ -121,7 +121,7 @@ Dotfiles checks: 19 daily-update tests, 6 bootstrap tests (including real chezmo
 retry state), 38 existing Herdr helper tests, Bash syntax, ShellCheck, and config
 preservation assertions pass. The full unrelated dotfiles test corpus was not run.
 
-## Rollout after local integration approval
+## Historical Space rollout procedure, 2026-10-15
 
 1. Verify clean primary destinations on `main`, rebase and integrate the helper
    topic, run proportionate checks, then run `just sync` from
@@ -137,6 +137,6 @@ preservation assertions pass. The full unrelated dotfiles test corpus was not ru
 4. Remove only these merged task worktrees and branches after confirming their
    commits or squash changes are included and preserving any valuable artifacts.
 
-Pushes remain separate. Until publication is explicitly requested, fresh machines
-clone the existing remote revision, which may still be the earlier scaffold.
-No remote branch, issue, or PR was changed by this implementation task.
+This earlier milestone used a separate publication approval. The current global
+Git guidance authorizes a main push after an approved main merge.
+No remote branch, issue, or PR changed during the tab implementation before approval.
