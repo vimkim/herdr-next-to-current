@@ -3,7 +3,7 @@
 Create a Herdr **Space immediately below the invoking Space**, or move the invoking
 Space before a numbered destination. Create a **tab immediately to the right of
 the invoking tab** within the same Space. Herdr's socket API calls Spaces `workspaces`.
-Requires Linux/WSL, Python 3.11+, and Herdr **0.9.3 / protocol 22**. There are no
+Requires Linux/WSL, Python 3.11+, and Herdr **0.9.3 or 0.9.5 / protocol 22**. There are no
 runtime dependencies beyond Python's standard library, including `curses`.
 
 ```sh

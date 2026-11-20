@@ -28,7 +28,7 @@ from herdr_next_to_current.tabs import capture_tab, create_tab_after, read_tabs
 
 @unittest.skipUnless(
     os.environ.get("HERDR_LIVE_TEST") == "1" and shutil.which("herdr"),
-    "set HERDR_LIVE_TEST=1 to use a disposable Herdr 0.9.3 server",
+    "set HERDR_LIVE_TEST=1 to use a disposable Herdr 0.9.3 or 0.9.5 server",
 )
 class Live(unittest.TestCase):
     def test_isolated_server_and_two_terminal_clients(self):
@@ -372,8 +372,11 @@ class Live(unittest.TestCase):
                     next(p for p in panes if p["tab_id"] == explicit_tab.new_id)["cwd"],
                     str(root / "explicit"),
                 )
+                herdr_version = subprocess.run(
+                    ["herdr", "--version"], env=env, capture_output=True, text=True, check=True
+                ).stdout.strip()
                 print(
-                    "Verified Herdr 0.9.3: two clients, source cwd, adjacency, focus, "
+                    f"Verified {herdr_version}: two clients, source cwd, adjacency, focus, "
                     "tab creation/placement/policy/focus, reorder, pane/process identities, "
                     "Alt+T, Alt+C and Alt+Shift+C popup context"
                 )

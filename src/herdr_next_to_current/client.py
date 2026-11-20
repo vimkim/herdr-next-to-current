@@ -1,9 +1,12 @@
-"""Bounded, one-request Unix socket transport for Herdr 0.9.3."""
+"""Bounded, one-request Unix socket transport for Herdr protocol 22 (0.9.3, 0.9.5)."""
 
 import json
 import socket
 import time
 import uuid
+
+# Herdr releases whose protocol-22 behavior tests/test_live.py has verified.
+SUPPORTED_VERSIONS = frozenset({"0.9.3", "0.9.5"})
 
 
 class ClientError(Exception):
@@ -63,6 +66,10 @@ class Client:
 
     def validate(self) -> None:
         metadata = self.call("ping", {}, "pong")
-        # Protocol 22 / release 0.9.3 defines all operations and the sidebar projection we use.
-        if metadata.get("version") != "0.9.3" or metadata.get("protocol") != 22:
-            raise ClientError("unsupported Herdr server; expected version 0.9.3, protocol 22")
+        # Protocol 22 defines all operations and the sidebar projection we use. Accept only
+        # releases verified by tests/test_live.py.
+        if metadata.get("version") not in SUPPORTED_VERSIONS or metadata.get("protocol") != 22:
+            raise ClientError(
+                "unsupported Herdr server; expected version "
+                f"{' or '.join(sorted(SUPPORTED_VERSIONS))}, protocol 22"
+            )

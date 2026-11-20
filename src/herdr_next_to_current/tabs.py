@@ -1,4 +1,4 @@
-"""Captured tab context and verified adjacent creation on Herdr 0.9.3."""
+"""Captured tab context and verified adjacent creation on Herdr 0.9.3 and 0.9.5."""
 
 from dataclasses import dataclass
 from pathlib import Path
