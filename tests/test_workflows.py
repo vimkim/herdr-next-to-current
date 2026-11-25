@@ -505,3 +505,33 @@ class Workflows(unittest.TestCase):
             ["root", "child", "a", created.new_id],
         )
         self.assertEqual([r["method"] for r in self.server.mutations], ["workspace.create"])
+
+    def test_workspace_env_forwarding_and_validation(self):
+        code, output, error = self.explicit(
+            "workspace",
+            "--env",
+            "HERDR_SHELL=bash",
+            "--env",
+            "HERDR_SHELL=nu",
+            "--env",
+            "FOO=a=b",
+            "--no-focus",
+            "--json",
+        )
+        self.assertEqual(code, 0, output + error)
+        self.assertEqual(
+            self.server.mutations[0]["params"]["env"],
+            {"HERDR_SHELL": "nu", "FOO": "a=b"},
+        )
+
+        self.server.requests.clear()
+        for invalid in ("NO_EQUALS", "=value", "BAD\0KEY=value", "KEY=bad\0value"):
+            with self.subTest(invalid=invalid):
+                code, output, _ = self.explicit("workspace", "--env", invalid, "--json")
+                self.assertEqual(code, 2)
+                self.assertEqual(json.loads(output)["stage"], "usage")
+                self.assertFalse(self.server.requests)
+
+        code, output, error = self.explicit("workspace", "--no-focus", "--json")
+        self.assertEqual(code, 0, output + error)
+        self.assertNotIn("env", self.server.mutations[-1]["params"])

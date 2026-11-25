@@ -78,7 +78,7 @@ def capture_tab(socket_path, workspace, source, env, *, client=None):
     return client, workspace, source
 
 
-def create_tab_after(client, workspace, source, *, label=None, cwd=None, focus=True):
+def create_tab_after(client, workspace, source, *, label=None, cwd=None, env=None, focus=True):
     new_id, stage = None, "validated"
     try:
         with mutation_lock(client):
@@ -89,6 +89,8 @@ def create_tab_after(client, workspace, source, *, label=None, cwd=None, focus=T
                 params["label"] = label
             if cwd is not None:
                 params["cwd"] = str(Path(cwd).expanduser().resolve())
+            if env:
+                params["env"] = dict(env)
             result = client.call("tab.create", params, "tab_created", mutation=True)
             tab = result.get("tab")
             if (

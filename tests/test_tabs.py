@@ -465,3 +465,32 @@ class Tabs(unittest.TestCase):
                     if process.poll() is None:
                         process.kill()
                     process.communicate(timeout=5)
+
+    def test_tab_env_forwarding_and_validation(self):
+        code, output, error = self.invoke(
+            "--env",
+            "HERDR_SHELL=bash",
+            "--env",
+            "HERDR_SHELL=nu",
+            "--env",
+            "FOO=a=b",
+            "--no-focus",
+            "--json",
+        )
+        self.assertEqual(code, 0, output + error)
+        self.assertEqual(
+            self.server.mutations[0]["params"]["env"],
+            {"HERDR_SHELL": "nu", "FOO": "a=b"},
+        )
+
+        self.server.requests.clear()
+        for invalid in ("NO_EQUALS", "=value"):
+            with self.subTest(invalid=invalid):
+                code, output, _ = self.invoke("--env", invalid, "--json")
+                self.assertEqual(code, 2)
+                self.assertEqual(json.loads(output)["stage"], "usage")
+                self.assertFalse(self.server.requests)
+
+        code, output, error = self.invoke("--no-focus", "--json")
+        self.assertEqual(code, 0, output + error)
+        self.assertNotIn("env", self.server.mutations[-1]["params"])

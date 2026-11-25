@@ -64,6 +64,17 @@ def nonempty(value):
     return value
 
 
+def env_entry(value):
+    if "=" not in value:
+        raise argparse.ArgumentTypeError("must be KEY=VALUE")
+    key, entry_value = value.split("=", 1)
+    if not key:
+        raise argparse.ArgumentTypeError("env key must not be empty")
+    if "\0" in key or "\0" in entry_value:
+        raise argparse.ArgumentTypeError("env key and value must not contain NUL bytes")
+    return key, entry_value
+
+
 def parser():
     root = ArgumentParser(
         prog="herdr-next-to-current",
@@ -84,6 +95,13 @@ def parser():
         command = commands.add_parser(resource, help=f"Create an adjacent {resource}")
         command.add_argument("--label")
         command.add_argument("--cwd")
+        command.add_argument(
+            "--env",
+            action="append",
+            type=env_entry,
+            metavar="KEY=VALUE",
+            help="Set an environment variable for the launched process",
+        )
         command.add_argument("--no-focus", action="store_true")
         command.add_argument("--json", action="store_true")
         command.add_argument("--quiet", action="store_true", help="Suppress successful output")
@@ -119,19 +137,31 @@ def main(argv=None):
             source = context.get("HERDR_WORKSPACE_ID")
         if socket_path and (args.socket is None or args.source_workspace):
             client = Client(socket_path)
+        env = dict(args.env) if getattr(args, "env", None) else None
         if args.resource == "tab":
             source = args.source_tab or context.get("HERDR_ACTIVE_TAB_ID")
             client, workspace, source = capture_tab(
                 args.socket, args.source_workspace, args.source_tab, context, client=client
             )
             outcome = create_tab_after(
-                client, workspace, source, label=args.label, cwd=args.cwd, focus=not args.no_focus
+                client,
+                workspace,
+                source,
+                label=args.label,
+                cwd=args.cwd,
+                env=env,
+                focus=not args.no_focus,
             )
         else:
             client, source = capture(args.socket, args.source_workspace, context, client=client)
             if args.resource == "workspace":
                 outcome = create_after(
-                    client, source, label=args.label, cwd=args.cwd, focus=not args.no_focus
+                    client,
+                    source,
+                    label=args.label,
+                    cwd=args.cwd,
+                    env=env,
+                    focus=not args.no_focus,
                 )
             elif interactive:
                 from .tui import run

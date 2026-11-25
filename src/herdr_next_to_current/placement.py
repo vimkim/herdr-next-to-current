@@ -226,7 +226,7 @@ def _move(client, state, source, before, *, expected_sidebar=None):
     return True
 
 
-def create_after(client, source, *, label=None, cwd=None, focus=True):
+def create_after(client, source, *, label=None, cwd=None, env=None, focus=True):
     new_id, stage = None, "validated"
     try:
         with mutation_lock(client):
@@ -237,6 +237,8 @@ def create_after(client, source, *, label=None, cwd=None, focus=True):
                 params["label"] = label
             if cwd is not None:
                 params["cwd"] = str(Path(cwd).expanduser().resolve())
+            if env:
+                params["env"] = dict(env)
             result = client.call("workspace.create", params, "workspace_created", mutation=True)
             workspace = result.get("workspace")
             if not isinstance(workspace, dict) or not isinstance(
